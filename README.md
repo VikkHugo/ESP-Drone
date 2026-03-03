@@ -31,7 +31,7 @@ Learn more:
 <br><br>
 
 <a href="https://circuitdigest.com/wiki/litewing/">
-  <img src="https://circuitdigest.com/wiki/wp-content/uploads/2026/02/litewing_hero_gif.gif"
+  <img src="https://raw.githubusercontent.com/Circuit-Digest/LiteWing/main/Documents/Images/litewing.gif"
        width="100%"
        alt="LiteWing GIF">
 </a>
@@ -46,7 +46,7 @@ Learn more:
 <br><br>
 
 <a href="https://circuitdigest.com/wiki/litewing-drone-positioning-module/">
-  <img src="https://circuitdigest.com/wiki/wp-content/uploads/2026/02/litewing-drone-positioning-module-hero-gif.gif"
+  <img src="https://raw.githubusercontent.com/Circuit-Digest/LiteWing/main/Documents/Images/litewing-drone-positioning-module.gif"
        width="100%"
        alt="LiteWing Positioning Module GIF">
 </a>
