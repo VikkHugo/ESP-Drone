@@ -11,9 +11,9 @@ What started as a simple DIY ESP32 drone project gradually evolved into LiteWing
 
 The original ESP-Drone focused on basic stabilization and Wi-Fi control using the ESP32 and MPU6050. As the project progressed, the firmware and hardware structure were refined and expanded to support additional capabilities such as:
 
-Height hold
+- Height hold
 
-Position hold
+- Position hold
 
 
 LiteWing builds upon the foundation of this project and extends it into a more structured development platform.
