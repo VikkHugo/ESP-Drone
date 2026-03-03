@@ -21,6 +21,11 @@ LiteWing builds upon the foundation of this project and extends it into a more s
 Learn more:
 
 [LiteWing](https://circuitdigest.com/wiki/litewing/)
+<a href="https://circuitdigest.com/wiki/litewing/">
+  <img src="https://circuitdigest.com/wiki/wp-content/uploads/2026/02/litewing_hero_gif.gif" 
+       alt="LiteWing Hero GIF" 
+       style="max-width:100%;height:auto;" />
+</a>
 
 [LiteWing Drone Positioning Module](https://circuitdigest.com/wiki/litewing-drone-positioning-module/)
 
