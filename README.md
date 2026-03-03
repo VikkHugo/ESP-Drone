@@ -2,7 +2,7 @@
 
 <img src="https://github.com/Circuit-Digest/ESP-Drone/blob/8e10ca8f1701dee8f7fa0e6d4f82067c9e87177b/Tittle%20Image.png" width="" alt="alt_text" title="image_tooltip">
 <br>
-<a href="https://circuitdigest.com/tags/ESP32"><img src="https://img.shields.io/static/v1?label=&labelColor=505050&message=ESP32 Tutorials Circuit Digest&color=%230076D6&style=social&logo=google-chrome&logoColor=%230076D6" alt="circuitdigest"/></a>
+<a href="https://circuitdigest.com/tags/ESP32"><img src="https://img.shields.io/static/v1?label=&labelColor=505050&message=ESP32"> Tutorials Circuit Digest&color=%230076D6&style=social&logo=google-chrome&logoColor=%230076D6" alt="circuitdigest"/></a>
 <br>
 
 What started as a simple DIY ESP32 drone project gradually evolved into LiteWing, a developer-friendly drone development platform.
