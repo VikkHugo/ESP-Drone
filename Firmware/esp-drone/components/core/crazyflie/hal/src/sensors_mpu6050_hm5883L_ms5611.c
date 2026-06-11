@@ -22,7 +22,7 @@
  * You should have received a copy of the GNU General Public License
  * along with this program. If not, see <http://www.gnu.org/licenses/>.
  *
- * Implements HAL for sensors MPU9250 and LPS25H
+ * Implements HAL for sensors MPU6050, HMC5883L and BMP280
  *
  * 2016.06.15: Initial version by Mike Hamer, http://mikehamer.info
  */
@@ -79,11 +79,54 @@
 /**
  * Enable sensors on board 
  */
-// #define SENSORS_ENABLE_MAG_HM5883L
-// #define SENSORS_ENABLE_PRESSURE_MS5611
+#define SENSORS_ENABLE_MAG_HM5883L
+#define SENSORS_ENABLE_PRESSURE_BMP280
 //#define SENSORS_ENABLE_RANGE_VL53L0X
 #define SENSORS_ENABLE_RANGE_VL53L1X
 #define SENSORS_ENABLE_FLOW_PMW3901
+
+#ifdef SENSORS_ENABLE_PRESSURE_BMP280
+#define BMP280_I2C_ADDRESS_0       0x76
+#define BMP280_I2C_ADDRESS_1       0x77
+#define BMP280_REG_ID              0xD0
+#define BMP280_REG_RESET           0xE0
+#define BMP280_REG_CTRL_MEAS       0xF4
+#define BMP280_REG_CONFIG          0xF5
+#define BMP280_REG_PRESS_MSB       0xF7
+#define BMP280_REG_CALIB_START     0x88
+#define BMP280_CALIB_DATA_LENGTH   24
+#define BMP280_CHIP_ID             0x58
+#define BMP280_MODE_NORMAL         0x03
+#define BMP280_OSRS_T_X2           0x01
+#define BMP280_OSRS_P_X8           0x02
+#define BMP280_T_SB_500_MS         0x04
+#define BMP280_FILTER_OFF          0x00
+
+typedef struct {
+    uint16_t dig_T1;
+    int16_t dig_T2;
+    int16_t dig_T3;
+    uint16_t dig_P1;
+    int16_t dig_P2;
+    int16_t dig_P3;
+    int16_t dig_P4;
+    int16_t dig_P5;
+    int16_t dig_P6;
+    int16_t dig_P7;
+    int16_t dig_P8;
+    int16_t dig_P9;
+} bmp280_calib_t;
+
+static bmp280_calib_t bmp280_calib;
+static uint8_t bmp280_i2c_addr = BMP280_I2C_ADDRESS_0;
+static int32_t bmp280_t_fine = 0;
+
+static bool bmp280ReadCalibration(I2C_Dev *i2c, uint8_t addr);
+static bool bmp280Configure(I2C_Dev *i2c, uint8_t addr);
+static bool bmp280Init(I2C_Dev *i2c);
+static float bmp280CompensateTemperature(int32_t rawTemp);
+static float bmp280CompensatePressure(uint32_t rawPress);
+#endif
 
 #define SENSORS_GYRO_FS_CFG MPU6050_GYRO_FS_2000
 #define SENSORS_DEG_PER_LSB_CFG MPU6050_DEG_PER_LSB_2000
@@ -102,8 +145,13 @@
 #define GPIO_INTA_MPU6050_IO CONFIG_MPU_PIN_INT
 #define SENSORS_MPU6050_BUFF_LEN 14
 #define SENSORS_MAG_BUFF_LEN 8
+#ifdef SENSORS_ENABLE_PRESSURE_BMP280
+#define SENSORS_BARO_BUFF_S_P_LEN 3
+#define SENSORS_BARO_BUFF_T_LEN 3
+#else
 #define SENSORS_BARO_BUFF_S_P_LEN MS5611_D1D2_SIZE
 #define SENSORS_BARO_BUFF_T_LEN MS5611_D1D2_SIZE
+#endif
 #define SENSORS_BARO_BUFF_LEN (SENSORS_BARO_BUFF_S_P_LEN + SENSORS_BARO_BUFF_T_LEN)
 
 #define GYRO_NBR_OF_AXES 3
@@ -179,8 +227,8 @@ static bool isMpu6050TestPassed = false;
 #ifdef SENSORS_ENABLE_MAG_HM5883L
 static bool isHmc5883lTestPassed = false;
 #endif
-#ifdef SENSORS_ENABLE_PRESSURE_MS5611
-static bool isMs5611TestPassed = false;
+#ifdef SENSORS_ENABLE_PRESSURE_BMP280
+static bool isBmp280TestPassed = false;
 #endif
 
 // Pre-calculated values for accelerometer alignment
@@ -305,23 +353,129 @@ void sensorsMpu6050Hmc5883lMs5611WaitDataReady(void)
 
 void processBarometerMeasurements(const uint8_t *buffer)
 {
-    //TODO: replace it to MS5611
+#ifdef SENSORS_ENABLE_PRESSURE_BMP280
+    uint32_t rawPressure = ((uint32_t)buffer[0] << 12) |
+                           ((uint32_t)buffer[1] << 4) |
+                           ((uint32_t)buffer[2] >> 4);
+    int32_t rawTemp = ((int32_t)buffer[3] << 12) |
+                      ((int32_t)buffer[4] << 4) |
+                      ((int32_t)buffer[5] >> 4);
+
+    float temperature = bmp280CompensateTemperature(rawTemp) / 100.0f;
+    float pressurePa = bmp280CompensatePressure(rawPressure);
+
+    sensorData.baro.pressure = pressurePa / 100.0f;
+    sensorData.baro.temperature = temperature;
+    sensorData.baro.asl = ms5611PressureToAltitude(&sensorData.baro.pressure);
+#else
     DEBUG_PRINTW("processBarometerMeasurements NEED TODO");
-//   static uint32_t rawPressure = 0;
-//   static int16_t rawTemp = 0;
-
-// Check if there is a new pressure update
-
-// Check if there is a new temp update
-
-//   sensorData.baro.pressure = (float) rawPressure / LPS25H_LSB_PER_MBAR;
-//   sensorData.baro.temperature = LPS25H_TEMP_OFFSET + ((float) rawTemp / LPS25H_LSB_PER_CELSIUS);
-//   sensorData.baro.asl = lps25hPressureToAltitude(&sensorData.baro.pressure);
+#endif
 }
+
+#ifdef SENSORS_ENABLE_PRESSURE_BMP280
+static bool bmp280ReadCalibration(I2C_Dev *i2c, uint8_t addr)
+{
+    uint8_t calib[BMP280_CALIB_DATA_LENGTH];
+    if (!i2cdevReadReg8(i2c, addr, BMP280_REG_CALIB_START, BMP280_CALIB_DATA_LENGTH, calib)) {
+        return false;
+    }
+
+    bmp280_calib.dig_T1 = (uint16_t)((uint16_t)calib[1] << 8 | calib[0]);
+    bmp280_calib.dig_T2 = (int16_t)((int16_t)calib[3] << 8 | calib[2]);
+    bmp280_calib.dig_T3 = (int16_t)((int16_t)calib[5] << 8 | calib[4]);
+    bmp280_calib.dig_P1 = (uint16_t)((uint16_t)calib[7] << 8 | calib[6]);
+    bmp280_calib.dig_P2 = (int16_t)((int16_t)calib[9] << 8 | calib[8]);
+    bmp280_calib.dig_P3 = (int16_t)((int16_t)calib[11] << 8 | calib[10]);
+    bmp280_calib.dig_P4 = (int16_t)((int16_t)calib[13] << 8 | calib[12]);
+    bmp280_calib.dig_P5 = (int16_t)((int16_t)calib[15] << 8 | calib[14]);
+    bmp280_calib.dig_P6 = (int16_t)((int16_t)calib[17] << 8 | calib[16]);
+    bmp280_calib.dig_P7 = (int16_t)((int16_t)calib[19] << 8 | calib[18]);
+    bmp280_calib.dig_P8 = (int16_t)((int16_t)calib[21] << 8 | calib[20]);
+    bmp280_calib.dig_P9 = (int16_t)((int16_t)calib[23] << 8 | calib[22]);
+
+    return true;
+}
+
+static bool bmp280Configure(I2C_Dev *i2c, uint8_t addr)
+{
+    uint8_t ctrl_meas = (BMP280_OSRS_T_X2 << 5) | (BMP280_OSRS_P_X8 << 2) | BMP280_MODE_NORMAL;
+    uint8_t config = (BMP280_T_SB_500_MS << 5) | (BMP280_FILTER_OFF << 2);
+
+    if (!i2cdevWriteReg8(i2c, addr, BMP280_REG_CTRL_MEAS, 1, &ctrl_meas)) {
+        return false;
+    }
+
+    if (!i2cdevWriteReg8(i2c, addr, BMP280_REG_CONFIG, 1, &config)) {
+        return false;
+    }
+
+    vTaskDelay(M2T(10));
+    return true;
+}
+
+static bool bmp280Init(I2C_Dev *i2c)
+{
+    uint8_t id = 0;
+    uint8_t addresses[] = { BMP280_I2C_ADDRESS_0, BMP280_I2C_ADDRESS_1 };
+
+    for (uint8_t i = 0; i < sizeof(addresses); i++) {
+        uint8_t addr = addresses[i];
+        if (!i2cdevReadByte(i2c, addr, BMP280_REG_ID, &id)) {
+            continue;
+        }
+
+        if (id != BMP280_CHIP_ID) {
+            continue;
+        }
+
+        if (!bmp280ReadCalibration(i2c, addr)) {
+            continue;
+        }
+
+        if (!bmp280Configure(i2c, addr)) {
+            continue;
+        }
+
+        bmp280_i2c_addr = addr;
+        return true;
+    }
+
+    return false;
+}
+
+static float bmp280CompensateTemperature(int32_t rawTemp)
+{
+    int32_t var1 = ((((rawTemp >> 3) - ((int32_t)bmp280_calib.dig_T1 << 1))) * ((int32_t)bmp280_calib.dig_T2)) >> 11;
+    int32_t var2 = (((((rawTemp >> 4) - (int32_t)bmp280_calib.dig_T1) * ((rawTemp >> 4) - (int32_t)bmp280_calib.dig_T1)) >> 12) * ((int32_t)bmp280_calib.dig_T3)) >> 14;
+    bmp280_t_fine = var1 + var2;
+    return (float)((bmp280_t_fine * 5 + 128) >> 8);
+}
+
+static float bmp280CompensatePressure(uint32_t rawPress)
+{
+    int64_t var1 = (int64_t)bmp280_t_fine - 128000;
+    int64_t var2 = var1 * var1 * (int64_t)bmp280_calib.dig_P6;
+    var2 = var2 + ((var1 * (int64_t)bmp280_calib.dig_P5) << 17);
+    var2 = var2 + (((int64_t)bmp280_calib.dig_P4) << 35);
+    var1 = ((var1 * var1 * (int64_t)bmp280_calib.dig_P3) >> 8) + ((var1 * (int64_t)bmp280_calib.dig_P2) << 12);
+    var1 = (((((int64_t)1) << 47) + var1) * (int64_t)bmp280_calib.dig_P1) >> 33;
+
+    if (var1 == 0) {
+        return 0.0f;
+    }
+
+    int64_t p = 1048576 - rawPress;
+    p = (((p << 31) - var2) * 3125) / var1;
+    var1 = (((int64_t)bmp280_calib.dig_P9) * (p >> 13) * (p >> 13)) >> 25;
+    var2 = (((int64_t)bmp280_calib.dig_P8) * p) >> 19;
+    p = ((p + var1 + var2) >> 8) + (((int64_t)bmp280_calib.dig_P7) << 4);
+
+    return (float)p / 256.0f;
+}
+#endif
 
 void processMagnetometerMeasurements(const uint8_t *buffer)
 {
-    //TODO: replace it to hmc5883l
     if (buffer[7] & (1 << HMC5883L_STATUS_READY_BIT)) {
         int16_t headingx = (((int16_t)buffer[2]) << 8) | buffer[1]; //hmc5883 different from
         int16_t headingz = (((int16_t)buffer[4]) << 8) | buffer[3];
@@ -491,17 +645,15 @@ static void sensorsDeviceInit(void)
     }
 
 #endif
-#ifdef SENSORS_ENABLE_PRESSURE_MS5611
-    ms5611Init(I2C0_DEV);
-
-    if (false) {
+#ifdef SENSORS_ENABLE_PRESSURE_BMP280
+    if (bmp280Init(I2C0_DEV) == true) {
         isBarometerPresent = true;
-        DEBUG_PRINTI("MS5611 I2C connection [OK].\n");
+        isBmp280TestPassed = true;
+        DEBUG_PRINTI("BMP280 I2C connection [OK].\n");
     } else {
         //TODO: Should sensor test fail hard if no connection
-        DEBUG_PRINTW("MS5611 I2C connection [FAIL].\n");
+        DEBUG_PRINTW("BMP280 I2C connection [FAIL].\n");
     }
-
 #endif
 
 #ifdef SENSORS_ENABLE_RANGE_VL53L1X
@@ -592,25 +744,18 @@ static void sensorsSetupSlaveRead(void)
 
 #endif
 
-#ifdef SENSORS_ENABLE_PRESSURE_MS5611
+#ifdef SENSORS_ENABLE_PRESSURE_BMP280
 
     if (isBarometerPresent) {
-        // Configure the LPS25H as a slave and enable read
-        // Setting up two reads works for LPS25H fifo avg filter as well as the
-        // auto inc wraps back to LPS25H_PRESS_OUT_L after LPS25H_PRESS_OUT_H is read.
-        mpu6050SetSlaveAddress(1, 0x80 | MS5611_ADDR_CSB_LOW);
-        mpu6050SetSlaveRegister(1, MS5611_D1);
-        mpu6050SetSlaveDataLength(1, MS5611_D1D2_SIZE);
+        // Configure the BMP280 as a slave and enable read of 6 bytes: pressure + temperature
+        mpu6050SetSlaveAddress(1, 0x80 | bmp280_i2c_addr);
+        mpu6050SetSlaveRegister(1, BMP280_REG_PRESS_MSB);
+        mpu6050SetSlaveDataLength(1, SENSORS_BARO_BUFF_LEN);
         mpu6050SetSlaveDelayEnabled(1, true);
         mpu6050SetSlaveEnabled(1, true);
-
-        mpu6050SetSlaveAddress(2, 0x80 | MS5611_ADDR_CSB_LOW); //temperature
-        mpu6050SetSlaveRegister(2, MS5611_D2);
-        mpu6050SetSlaveDataLength(2, MS5611_D1D2_SIZE);
-        mpu6050SetSlaveDelayEnabled(2, true);
-        mpu6050SetSlaveEnabled(2, true);
-        DEBUG_PRINTD("mpu6050SetSlaveAddress MS5611 done \n");
+        DEBUG_PRINTD("mpu6050SetSlaveAddress BMP280 done \n");
     }
+#endif
 
 #endif
 
@@ -725,13 +870,11 @@ bool sensorsMpu6050Hmc5883lMs5611Test(void)
 
 #endif
 
-#ifdef SENSORS_ENABLE_PRESSURE_MS5611
+#ifdef SENSORS_ENABLE_PRESSURE_BMP280
     testStatus &= isBarometerPresent;
 
     if (testStatus) {
-        isMs5611TestPassed = ms5611SelfTest();
-
-        testStatus &= isMs5611TestPassed;
+        testStatus &= isBmp280TestPassed;
     }
 
 #endif
