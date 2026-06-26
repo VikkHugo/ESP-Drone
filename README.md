@@ -1,4 +1,3 @@
-
 ## ESP-Drone
 
 * [中文](./README_cn.md)
@@ -12,7 +11,7 @@ This fork includes support for the **GY-87** sensor stack on the legacy flight p
 * **HMC5883L-compatible magnetometer** for yaw correction
 * **BMP180** for pressure-based altitude estimation
 
-The estimator now combines gyro, accelerometer, and magnetometer data for a more stable yaw estimate while keeping the existing serial/log path intact.
+The estimator combines gyro, accelerometer, and magnetometer data for a more stable yaw estimate while keeping the existing serial/log path intact.
 
 > Currently support ESP32、ESP32S2、ESP32S3, please using ESP-IDF [release/v4.4](https://docs.espressif.com/projects/esp-idf/en/release-v4.4/esp32s2/get-started/index.html) branch as your develop environment
 
@@ -34,7 +33,7 @@ For more information, please check the sections below:
 6. GY-87 sensor support with fused attitude estimation
 7. Existing telemetry/log output for roll, pitch, yaw, altitude, gyro and magnetometer values
 
-Note: to implement Height-hold/Position-hold mode, extension boards are needed. For more information, see Hardware Reference. 
+Note: to implement Height-hold/Position-hold mode, extension boards are needed. For more information, see Hardware Reference.
 
 ### Sensor Stack
 
@@ -114,7 +113,7 @@ Before pushing to GitHub:
 Additional third party copyrighted code is included under the following licenses.
 
 | Component | License | Origin |Commit ID |
-| :---:  | :---: | :---: |:---: |
+| :---:  | :---:  | :---:  |:---: |
 | core/crazyflie | GPL3.0  |[Crazyflie](https://github.com/bitcraze/crazyflie-firmware) |tag_2021_01 b448553|
 | lib/dsp_lib |  | [esp32-lin](https://github.com/whyengineer/esp32-lin/tree/master/components/dsp_lib) |6fa39f4c|
 
@@ -127,4 +126,3 @@ From December 2022, we will offer limited support on this project, but Pull Requ
 1. Thanks to Bitcraze for the great [Crazyflie project](https://www.bitcraze.io/%20).
 2. Thanks to Espressif for the powerful [ESP-IDF framework](https://docs.espressif.com/projects/esp-idf/en/latest/esp32s2/get-started/index.html).
 3. Thanks to WhyEngineer for the useful [ESP-DSP lib](https://github.com/whyengineer/esp32-lin/tree/master/components/dsp_lib).
-
