@@ -59,8 +59,35 @@ Default pin mapping is defined in `main/Kconfig.projbuild`. The sensor bus uses 
 
 * `I2C0 SDA` = `GPIO 21`
 * `I2C0 SCL` = `GPIO 22`
-* `I2C1 SDA` = `GPIO 16`
-* `I2C1 SCL` = `GPIO 17`
+* `I2C1 SDA` = `GPIO 19`
+* `I2C1 SCL` = `GPIO 2`
+* `MPU INT` = `GPIO 35`
+
+This frees `GPIO 16` and `GPIO 17` for UART1 wiring.
+
+### Lolin D32 Adapted Pinout (ESP32)
+
+This project is adapted for **Lolin D32** using the `ESPlane V1` target profile.
+
+#### Interfaces
+
+* `I2C0 (main IMU bus)` -> `SDA GPIO 21`, `SCL GPIO 22`
+* `I2C1 (deck/aux bus)` -> `SDA GPIO 19`, `SCL GPIO 2`
+* `UART1 (reserved user serial)` -> `TX GPIO 16`, `RX GPIO 17`
+* `Console/flash serial` -> `UART0` (default ESP32 console path)
+
+#### Motors (Lolin D32 profile)
+
+* `M1` -> `GPIO 4`
+* `M2` -> `GPIO 33`
+* `M3` -> `GPIO 32`
+* `M4` -> `GPIO 25`
+
+#### Notes for this adaptation
+
+* `I2C1` was moved away from `GPIO 16/17` to avoid conflict with UART1.
+* `MPU INT` was remapped to `GPIO 35` to keep all active signals conflict-free.
+* This keeps motor outputs unchanged and preserves the existing telemetry/control flow.
 
 #### ESPlane V2 S2
 
