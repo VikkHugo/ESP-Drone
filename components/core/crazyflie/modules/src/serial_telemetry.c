@@ -16,8 +16,9 @@
 #define SERIAL_TELEMETRY_UART_BAUDRATE 115200
 #define SERIAL_TELEMETRY_QUEUE_LEN 1
 #define SERIAL_TELEMETRY_TX_BUFFER_SIZE 1024
-#define SERIAL_TELEMETRY_RX_BUFFER_SIZE 0
+#define SERIAL_TELEMETRY_RX_BUFFER_SIZE 256
 #define SERIAL_TELEMETRY_LINE_MAX_LEN 320
+#define SERIAL_TELEMETRY_TASK_STACKSIZE (6 * configBASE_STACK_SIZE)
 
 #ifndef SERIAL_TELEMETRY_UART_TX_PIN
 #define SERIAL_TELEMETRY_UART_TX_PIN 16
@@ -47,19 +48,21 @@ typedef struct {
 static bool isInit = false;
 static xQueueHandle telemetryQueue;
 STATIC_MEM_QUEUE_ALLOC(telemetryQueue, SERIAL_TELEMETRY_QUEUE_LEN, sizeof(serialTelemetryFrame_t));
-STATIC_MEM_TASK_ALLOC(serialTelemetryTask, (2 * configBASE_STACK_SIZE));
+STATIC_MEM_TASK_ALLOC(serialTelemetryTask, SERIAL_TELEMETRY_TASK_STACKSIZE);
+
+// Keep the output buffer out of task stack to minimize stack pressure.
+static char telemetryLine[SERIAL_TELEMETRY_LINE_MAX_LEN];
 
 static void serialTelemetryTask(void* param)
 {
   (void)param;
   serialTelemetryFrame_t frame;
-  char line[SERIAL_TELEMETRY_LINE_MAX_LEN];
 
   while (true) {
     if (xQueueReceive(telemetryQueue, &frame, portMAX_DELAY) == pdTRUE) {
       int written = snprintf(
-          line,
-          sizeof(line),
+          telemetryLine,
+          sizeof(telemetryLine),
           "acc_x:%0.4f:acc_y:%0.4f:acc_z:%0.4f:gyro_x:%0.4f:gyro_y:%0.4f:gyro_z:%0.4f:mag_x:%0.4f:mag_y:%0.4f:mag_z:%0.4f:altitude:%0.4f:pressao:%0.4f:roll:%0.4f:pitch:%0.4f:yaw:%0.4f\n",
           (double)frame.acc_x, (double)frame.acc_y, (double)frame.acc_z,
           (double)frame.gyro_x, (double)frame.gyro_y, (double)frame.gyro_z,
@@ -69,10 +72,10 @@ static void serialTelemetryTask(void* param)
 
       if (written > 0) {
         int len = written;
-        if (len > (int)sizeof(line)) {
-          len = sizeof(line);
+        if (len >= (int)sizeof(telemetryLine)) {
+          len = sizeof(telemetryLine) - 1;
         }
-        uart_write_bytes(SERIAL_TELEMETRY_UART_NUM, line, len);
+        uart_write_bytes(SERIAL_TELEMETRY_UART_NUM, telemetryLine, len);
       }
     }
   }

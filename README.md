@@ -104,6 +104,8 @@ This fork provides serial telemetry for an external controller (for example ESP8
 * If ESP8266 USB logging is needed, use a board/setup that keeps reliable hardware RX available.
 * The telemetry queue keeps the latest frame; if receiver is slower, older frames are dropped to protect flight timing.
 
+With the serial settings and wiring documented above, this implementation guarantees an appropriate telemetry communication path to ESP8266 while keeping flight-control timing independent of UART transmission (non-blocking telemetry task + queue overwrite policy).
+
 ### Pin Map
 
 Default pin mapping is defined in `main/Kconfig.projbuild`. The sensor bus uses `I2C0`.
