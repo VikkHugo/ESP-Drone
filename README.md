@@ -46,6 +46,16 @@ The following updates were added and validated during bring-up on Lolin D32:
 	* Data production is done in the stabilizer loop at 25 Hz.
 	* Transmission is asynchronous via queue + dedicated low-priority UART task.
 	* This avoids blocking the flight control loop.
+* Serial telemetry task stability fix:
+	* Increased SERIAL_TLM task stack budget.
+	* Moved telemetry line buffer out of task local stack.
+	* This prevents stack overflow resets while preserving non-blocking telemetry behavior.
+* Flash size header alignment fix:
+	* Firmware image header is now configured for `4MB` flash on ESP32 Lolin D32.
+	* This removes boot warning about detected flash size (`4096k`) vs binary header (`2048k`).
+* ADC driver modernization for ESP-IDF 5.x:
+	* Migrated from legacy ADC driver APIs to `esp_adc/adc_oneshot.h` + calibration schemes.
+	* This removes the deprecation warning for legacy ADC while preserving battery/voltage readings.
 
 ```text
 acc_x:acc_y:acc_z:gyro_x:gyro_y:gyro_z:mag_x:mag_y:mag_z:altitude:pressao:roll:pitch:yaw
