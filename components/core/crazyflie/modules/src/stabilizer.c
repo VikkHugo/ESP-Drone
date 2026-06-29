@@ -45,6 +45,7 @@
 #include "controller.h"
 #include "power_distribution.h"
 //#include "collision_avoidance.h"
+#include "serial_telemetry.h"
 
 #include "estimator.h"
 //#include "usddeck.h" //usddeckLoggingMode_e
@@ -198,6 +199,7 @@ void stabilizerInit(StateEstimatorType estimator)
   stateEstimatorInit(estimator);
   controllerInit(ControllerTypeAny);
   powerDistributionInit();
+  serialTelemetryInit();
   sitAwInit();
   //collisionAvoidanceInit();
   estimatorType = getStateEstimator();
@@ -300,12 +302,7 @@ static void stabilizerTask(void* param)
       //collisionAvoidanceUpdateSetpoint(&setpoint, &sensorData, &state, tick);
 
       if (RATE_DO_EXECUTE(RATE_25_HZ, tick)) {
-        DEBUG_PRINTI("acc_x:%0.4f:acc_y:%0.4f:acc_z:%0.4f:gyro_x:%0.4f:gyro_y:%0.4f:gyro_z:%0.4f:mag_x:%0.4f:mag_y:%0.4f:mag_z:%0.4f:altitude:%0.4f:pressao:%0.4f:roll:%0.4f:pitch:%0.4f:yaw:%0.4f\n",
-                     (double)sensorData.acc.x, (double)sensorData.acc.y, (double)sensorData.acc.z,
-                     (double)sensorData.gyro.x, (double)sensorData.gyro.y, (double)sensorData.gyro.z,
-                     (double)sensorData.mag.x, (double)sensorData.mag.y, (double)sensorData.mag.z,
-                     (double)sensorData.baro.asl, (double)sensorData.baro.pressure,
-                     (double)state.attitude.roll, (double)state.attitude.pitch, (double)state.attitude.yaw);
+        serialTelemetryPush(&sensorData, &state);
       }
 
       controller(&control, &setpoint, &sensorData, &state, tick);

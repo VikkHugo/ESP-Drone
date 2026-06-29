@@ -42,13 +42,16 @@ The following updates were added and validated during bring-up on Lolin D32:
 	* `QMC5883L` clone fallback (address `0x0D`)
 * Sensor startup no longer blocks `Ready to fly` when magnetometer probe/self-test fails.
 	* The firmware now logs the failure and continues startup for initial flight validation.
-* Added runtime sensor stream output (debug print) after `Ready to fly` for quick validation in monitor:
+* Added safe serial telemetry output for external microcontroller integration:
+	* Data production is done in the stabilizer loop at 25 Hz.
+	* Transmission is asynchronous via queue + dedicated low-priority UART task.
+	* This avoids blocking the flight control loop.
 
 ```text
 acc_x:acc_y:acc_z:gyro_x:gyro_y:gyro_z:mag_x:mag_y:mag_z:altitude:pressao:roll:pitch:yaw
 ```
 
-The stream is printed at 25 Hz from the stabilizer loop.
+The stream is generated at 25 Hz and sent through UART1 in a non-blocking path.
 
 ### Active Validation Config
 
@@ -72,7 +75,34 @@ The firmware probes the sensors on boot and exposes their values through the exi
 * `gyro.x`, `gyro.y`, `gyro.z`
 * `acc.x`, `acc.y`, `acc.z`
 
-The serial communication path used by the firmware remains the same; the new sensor fusion only updates the state estimation source used by the control stack.
+The firmware now also supports a dedicated UART telemetry path for external MCU integration, while preserving the original Wi-Fi/CRTP control path.
+
+### Serial Telemetry (ESP32 -> ESP8266)
+
+This fork provides serial telemetry for an external controller (for example ESP8266) using UART1.
+
+#### ESP32 (drone) side
+
+* UART: `UART1`
+* TX pin: `GPIO16`
+* RX pin: `GPIO17`
+* Baud rate: `115200`
+* Frame: `8N1`
+* Telemetry rate: `25 Hz`
+
+#### ESP8266 side recommended settings
+
+* Use hardware serial (`Serial`) at `115200` baud, `SERIAL_8N1`
+* Ensure common ground between ESP32 and ESP8266
+* Connect `ESP32 GPIO16 (TX)` -> `ESP8266 RX`
+* Connect `ESP32 GPIO17 (RX)` <- `ESP8266 TX` (optional, if return channel is needed)
+* Both devices are `3.3V` logic (do not use 5V UART levels)
+
+#### Important integration notes
+
+* Avoid using SoftwareSerial on ESP8266 for this stream if possible.
+* If ESP8266 USB logging is needed, use a board/setup that keeps reliable hardware RX available.
+* The telemetry queue keeps the latest frame; if receiver is slower, older frames are dropped to protect flight timing.
 
 ### Pin Map
 
