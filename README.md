@@ -33,6 +33,29 @@ For more information, please check the sections below:
 6. GY-87 sensor support with fused attitude estimation
 7. Existing telemetry/log output for roll, pitch, yaw, altitude, gyro and magnetometer values
 
+### Recent Updates (This Fork)
+
+The following updates were added and validated during bring-up on Lolin D32:
+
+* Magnetometer auto-detection for both original and clone chips in GY-87:
+	* `HMC5883L` (address `0x1E`)
+	* `QMC5883L` clone fallback (address `0x0D`)
+* Sensor startup no longer blocks `Ready to fly` when magnetometer probe/self-test fails.
+	* The firmware now logs the failure and continues startup for initial flight validation.
+* Added runtime sensor stream output (debug print) after `Ready to fly` for quick validation in monitor:
+
+```text
+acc_x:acc_y:acc_z:gyro_x:gyro_y:gyro_z:mag_x:mag_y:mag_z:altitude:pressao:roll:pitch:yaw
+```
+
+The stream is printed at 25 Hz from the stabilizer loop.
+
+### Active Validation Config
+
+For the current `sdkconfig` used in this workspace:
+
+* `MPU_PIN_INT = GPIO34`
+
 Note: to implement Height-hold/Position-hold mode, extension boards are needed. For more information, see Hardware Reference.
 
 ### Sensor Stack

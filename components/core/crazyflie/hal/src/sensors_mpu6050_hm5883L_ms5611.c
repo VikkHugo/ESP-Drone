@@ -75,6 +75,17 @@
 //#define GYRO_ADD_RAW_AND_VARIANCE_LOG_VALUES
 
 #define MAG_GAUSS_PER_LSB 666.7f
+#define QMC5883L_GAUSS_PER_LSB 1200.0f
+
+#define QMC5883L_ADDRESS                 0x0D
+#define QMC5883L_RA_DATA_X_L             0x00
+#define QMC5883L_RA_STATUS               0x06
+#define QMC5883L_RA_CONTROL_1            0x09
+#define QMC5883L_RA_CONTROL_2            0x0A
+#define QMC5883L_RA_SET_RESET            0x0B
+#define QMC5883L_STATUS_DRDY_BIT         0
+#define QMC5883L_CONTROL_1_CONT_200HZ_8G 0x1D
+#define QMC5883L_CONTROL_2_SOFT_RST      0x80
 
 /**
  * Enable sensors on board 
@@ -221,6 +232,12 @@ static bool isMpu6050TestPassed = false;
 #ifdef SENSORS_ENABLE_MAG_HM5883L
 static bool isHmc5883lTestPassed = false;
 #endif
+typedef enum {
+    magTypeNone = 0,
+    magTypeHmc5883l,
+    magTypeQmc5883l,
+} magType_t;
+static magType_t magType = magTypeNone;
 #ifdef SENSORS_ENABLE_PRESSURE_BMP180
     static bool isBmp180TestPassed = false;
 #endif
@@ -239,6 +256,8 @@ static void processMagnetometerMeasurements(const uint8_t *buffer);
 static void processBarometerMeasurements(const uint8_t *buffer);
 static void sensorsDeviceInit(void);
 static void sensorsSetupSlaveRead(void);
+static bool qmc5883lTryInit(I2C_Dev *i2c);
+static const char* magTypeName(magType_t type);
 
 #ifdef GYRO_GYRO_BIAS_LIGHT_WEIGHT
 static bool processGyroBiasNoBuffer(int16_t gx, int16_t gy, int16_t gz, Axis3f *gyroBiasOut);
@@ -427,13 +446,36 @@ static void sensorsDeviceInit(void)
 
 #ifdef SENSORS_ENABLE_MAG_HM5883L
     hmc5883lInit(I2C0_DEV);
-    if (hmc5883lTestConnection() == true) {
+    bool magConnected = false;
+    for (int retry = 0; retry < 10; retry++) {
+        if (hmc5883lTestConnection() == true) {
+            magConnected = true;
+            break;
+        }
+        vTaskDelay(M2T(10));
+    }
+
+    if (magConnected) {
         isMagnetometerPresent = true;
+        magType = magTypeHmc5883l;
         isHmc5883lTestPassed = true;
         hmc5883lSetMode(HMC5883L_MODE_CONTINUOUS);
         DEBUG_PRINTI("HMC5883L I2C connection [OK].\n");
     } else {
-        DEBUG_PRINTW("HMC5883L I2C connection [FAIL].\n");
+        for (int retry = 0; retry < 10; retry++) {
+            if (qmc5883lTryInit(I2C0_DEV)) {
+                isMagnetometerPresent = true;
+                magType = magTypeQmc5883l;
+                isHmc5883lTestPassed = true;
+                DEBUG_PRINTI("QMC5883L I2C connection [OK].\n");
+                break;
+            }
+            vTaskDelay(M2T(10));
+        }
+
+        if (!isMagnetometerPresent) {
+            DEBUG_PRINTW("HMC5883L/QMC5883L I2C connection [FAIL].\n");
+        }
     }
 #endif
 
@@ -447,8 +489,9 @@ static void sensorsDeviceInit(void)
     }
 #endif
 
-    DEBUG_PRINTI("GY-87 sensor probe -> MPU6050:%s HMC5883L:%s BMP180:%s\n",
+    DEBUG_PRINTI("GY-87 sensor probe -> MPU6050:%s MAG(%s):%s BMP180:%s\n",
                  isMpu6050TestPassed ? "OK" : "FAIL",
+                 magTypeName(magType),
                  isMagnetometerPresent ? "OK" : "FAIL",
                  isBarometerPresent ? "OK" : "FAIL");
 }
@@ -569,14 +612,62 @@ static float bmp180CompensatePressure(int32_t up, uint8_t oss)
 
 void processMagnetometerMeasurements(const uint8_t *buffer)
 {
-    if (buffer[7] & (1 << HMC5883L_STATUS_READY_BIT)) {
-        int16_t headingx = (((int16_t)buffer[2]) << 8) | buffer[1]; //hmc5883 different from
-        int16_t headingz = (((int16_t)buffer[4]) << 8) | buffer[3];
-        int16_t headingy = (((int16_t)buffer[6]) << 8) | buffer[5];
+    if (magType == magTypeQmc5883l) {
+        if (buffer[6] & (1 << QMC5883L_STATUS_DRDY_BIT)) {
+            int16_t headingx = (((int16_t)buffer[1]) << 8) | buffer[0];
+            int16_t headingy = (((int16_t)buffer[3]) << 8) | buffer[2];
+            int16_t headingz = (((int16_t)buffer[5]) << 8) | buffer[4];
 
-        sensorData.mag.x = (float)headingx / MAG_GAUSS_PER_LSB; //to gauss
-        sensorData.mag.y = (float)headingy / MAG_GAUSS_PER_LSB;
-        sensorData.mag.z = (float)headingz / MAG_GAUSS_PER_LSB;
+            sensorData.mag.x = (float)headingx / QMC5883L_GAUSS_PER_LSB;
+            sensorData.mag.y = (float)headingy / QMC5883L_GAUSS_PER_LSB;
+            sensorData.mag.z = (float)headingz / QMC5883L_GAUSS_PER_LSB;
+        }
+    } else {
+        if (buffer[7] & (1 << HMC5883L_STATUS_READY_BIT)) {
+            int16_t headingx = (((int16_t)buffer[2]) << 8) | buffer[1];
+            int16_t headingz = (((int16_t)buffer[4]) << 8) | buffer[3];
+            int16_t headingy = (((int16_t)buffer[6]) << 8) | buffer[5];
+
+            sensorData.mag.x = (float)headingx / MAG_GAUSS_PER_LSB;
+            sensorData.mag.y = (float)headingy / MAG_GAUSS_PER_LSB;
+            sensorData.mag.z = (float)headingz / MAG_GAUSS_PER_LSB;
+        }
+    }
+}
+
+static bool qmc5883lTryInit(I2C_Dev *i2c)
+{
+    uint8_t reg = 0;
+
+    if (!i2cdevWriteByte(i2c, QMC5883L_ADDRESS, QMC5883L_RA_CONTROL_2, QMC5883L_CONTROL_2_SOFT_RST)) {
+        return false;
+    }
+    vTaskDelay(M2T(5));
+
+    if (!i2cdevWriteByte(i2c, QMC5883L_ADDRESS, QMC5883L_RA_SET_RESET, 0x01)) {
+        return false;
+    }
+
+    if (!i2cdevWriteByte(i2c, QMC5883L_ADDRESS, QMC5883L_RA_CONTROL_1, QMC5883L_CONTROL_1_CONT_200HZ_8G)) {
+        return false;
+    }
+
+    if (!i2cdevReadByte(i2c, QMC5883L_ADDRESS, QMC5883L_RA_CONTROL_1, &reg)) {
+        return false;
+    }
+
+    return (reg == QMC5883L_CONTROL_1_CONT_200HZ_8G);
+}
+
+static const char* magTypeName(magType_t type)
+{
+    switch (type) {
+    case magTypeHmc5883l:
+        return "HMC5883L";
+    case magTypeQmc5883l:
+        return "QMC5883L";
+    default:
+        return "NONE";
     }
 }
 
@@ -659,12 +750,18 @@ static void sensorsSetupSlaveRead(void)
 
     if (isMagnetometerPresent) {
         // Set registers for mpu6050 master to read from
-        mpu6050SetSlaveAddress(0, 0x80 | HMC5883L_ADDRESS);        // set the magnetometer to Slave 0, enable read
-        mpu6050SetSlaveRegister(0, HMC5883L_RA_MODE);       // read the magnetometer heading register
+        if (magType == magTypeQmc5883l) {
+            mpu6050SetSlaveAddress(0, 0x80 | QMC5883L_ADDRESS);
+            mpu6050SetSlaveRegister(0, QMC5883L_RA_DATA_X_L);
+            DEBUG_PRINTD("mpu6050SetSlaveAddress QMC5883L done \n");
+        } else {
+            mpu6050SetSlaveAddress(0, 0x80 | HMC5883L_ADDRESS);
+            mpu6050SetSlaveRegister(0, HMC5883L_RA_MODE);
+            DEBUG_PRINTD("mpu6050SetSlaveAddress HMC5883L done \n");
+        }
         mpu6050SetSlaveDataLength(0, SENSORS_MAG_BUFF_LEN); // hmc5883l:model,x,z,y,status ak8963:read 8 bytes (ST1, x, y, z heading, ST2 (overflow check))
         mpu6050SetSlaveDelayEnabled(0, true);
         mpu6050SetSlaveEnabled(0, true);
-        DEBUG_PRINTD("mpu6050SetSlaveAddress HMC5883L done \n");
     }
 
 #endif
@@ -775,11 +872,20 @@ bool sensorsMpu6050Hmc5883lMs5611Test(void)
     testStatus &= isMpu6050TestPassed;
 
 #ifdef SENSORS_ENABLE_MAG_HM5883L
-    testStatus &= isMagnetometerPresent;
-
-    if (testStatus) {
+    // Magnetometer is optional for basic flight readiness in this target.
+    // Keep reporting failures, but do not block system startup on MAG issues.
+    if (isMagnetometerPresent && magType == magTypeHmc5883l) {
         isHmc5883lTestPassed = hmc5883lSelfTest();
-        testStatus &= isHmc5883lTestPassed;
+        if (!isHmc5883lTestPassed) {
+            DEBUG_PRINTW("HMC5883L self test [FAIL], continuing without blocking startup.\n");
+        }
+    } else if (isMagnetometerPresent && magType == magTypeQmc5883l) {
+        uint8_t qmcStatus = 0;
+        if (!i2cdevReadByte(I2C0_DEV, QMC5883L_ADDRESS, QMC5883L_RA_STATUS, &qmcStatus)) {
+            DEBUG_PRINTW("QMC5883L status read [FAIL], continuing without blocking startup.\n");
+        }
+    } else {
+        DEBUG_PRINTW("HMC5883L not detected, continuing without blocking startup.\n");
     }
 
 #endif
