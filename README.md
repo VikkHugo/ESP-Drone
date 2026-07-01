@@ -87,6 +87,80 @@ The firmware probes the sensors on boot and exposes their values through the exi
 
 The firmware now also supports a dedicated UART telemetry path for external MCU integration, while preserving the original Wi-Fi/CRTP control path.
 
+### Sensor Debug And MPU Calibration (Quick Guide)
+
+This fork includes a simple and safe debug toggle for sensor values, plus a calibration fix that improves MPU6050 accelerometer output stability.
+
+#### 1) How to enable/disable sensor debug prints
+
+Edit this file:
+
+* `components/core/crazyflie/hal/src/sensors_mpu6050_hm5883L_ms5611.c`
+
+Find these lines near the top of the file:
+
+```c
+// Uncomment this line to enable periodic sensor debug prints.
+// #define SENSORS_DEBUG_PRINT_ENABLE
+#define SENSORS_DEBUG_PRINT_EVERY_N_SAMPLES 50
+```
+
+Usage:
+
+* Enable debug: uncomment `#define SENSORS_DEBUG_PRINT_ENABLE`
+* Disable debug: comment `#define SENSORS_DEBUG_PRINT_ENABLE`
+* Control print rate: change `SENSORS_DEBUG_PRINT_EVERY_N_SAMPLES` (higher = fewer prints)
+
+The debug output is produced inside `sensorsTask()` after sensor processing and queue updates, so it does not change control logic.
+
+#### 2) What to look for to validate sensor values
+
+When enabled, monitor output lines in this format:
+
+```text
+SENS acc[ax ay az] gyro[gx gy gz] mag[mx my mz] baro[p=.. t=.. asl=..]
+```
+
+Typical sanity checks while the drone is stationary:
+
+* `acc.z` near `+1.0 g` (depending on orientation/sign convention)
+* `gyro.x/y/z` near `0.0 deg/s`
+* Magnetometer and barometer values should change smoothly, not jump randomly
+
+#### 3) Ready-to-fly indication
+
+The startup readiness message is logged from:
+
+* `components/core/crazyflie/modules/src/stabilizer.c`
+
+Expected message:
+
+```text
+Ready to fly.
+```
+
+#### 4) MPU calibration fix applied in this fork
+
+To avoid accelerometer values collapsing to zero due to uninitialized alignment coefficients, this fork now initializes and computes pitch/roll alignment explicitly in:
+
+* `components/core/crazyflie/hal/src/sensors_mpu6050_hm5883L_ms5611.c`
+
+Applied behavior:
+
+* Safe defaults before init: `cosPitch=1`, `sinPitch=0`, `cosRoll=1`, `sinRoll=0`
+* Runtime trim calculation in `sensorsDeviceInit()` using:
+	* `PITCH_CALIB`
+	* `ROLL_CALIB`
+
+This is a low-impact change: it only affects accelerometer frame alignment math and does not change task scheduling, queue flow, or flight control structure.
+
+#### 5) Minimal-change workflow (recommended)
+
+1. Keep debug disabled by default.
+2. Enable `SENSORS_DEBUG_PRINT_ENABLE` only for bench validation.
+3. Validate values and wait for `Ready to fly.`.
+4. Disable debug again before normal flight tests.
+
 ### Serial Telemetry (ESP32 -> ESP8266)
 
 This fork provides serial telemetry for an external controller (for example ESP8266) using UART1.

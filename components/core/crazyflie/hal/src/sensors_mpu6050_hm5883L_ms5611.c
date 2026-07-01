@@ -74,6 +74,10 @@
 
 //#define GYRO_ADD_RAW_AND_VARIANCE_LOG_VALUES
 
+// Uncomment this line to enable periodic sensor debug prints.
+// #define SENSORS_DEBUG_PRINT_ENABLE
+#define SENSORS_DEBUG_PRINT_EVERY_N_SAMPLES 50
+
 #define MAG_GAUSS_PER_LSB 666.7f
 #define QMC5883L_GAUSS_PER_LSB 1200.0f
 
@@ -199,6 +203,10 @@ static bool isInit = false;
 static sensorData_t sensorData;
 static volatile uint64_t imuIntTimestamp;
 
+#ifdef SENSORS_DEBUG_PRINT_ENABLE
+static uint32_t sensorDebugPrintCounter = 0;
+#endif
+
 static Axis3i16 gyroRaw;
 static Axis3i16 accelRaw;
 static BiasObj gyroBiasRunning;
@@ -243,10 +251,10 @@ static magType_t magType = magTypeNone;
 #endif
 
 // Pre-calculated values for accelerometer alignment
-float cosPitch;
-float sinPitch;
-float cosRoll;
-float sinRoll;
+float cosPitch = 1.0f;
+float sinPitch = 0.0f;
+float cosRoll = 1.0f;
+float sinRoll = 0.0f;
 
 // This buffer needs to hold data from all sensors
 static uint8_t buffer[SENSORS_MPU6050_BUFF_LEN + SENSORS_MAG_BUFF_LEN + SENSORS_BARO_BUFF_LEN] = {0};
@@ -353,6 +361,25 @@ static void sensorsTask(void *param)
 
             /* sensors step 4- Unlock stabilizer task */
             xSemaphoreGive(dataReady);
+
+#ifdef SENSORS_DEBUG_PRINT_ENABLE
+            sensorDebugPrintCounter++;
+            if ((sensorDebugPrintCounter % SENSORS_DEBUG_PRINT_EVERY_N_SAMPLES) == 0) {
+                if (isBarometerPresent) {
+                    DEBUG_PRINTI("SENS acc[%.3f %.3f %.3f] gyro[%.3f %.3f %.3f] mag[%.3f %.3f %.3f] baro[p=%.2f t=%.2f asl=%.2f]\n",
+                        sensorData.acc.x, sensorData.acc.y, sensorData.acc.z,
+                        sensorData.gyro.x, sensorData.gyro.y, sensorData.gyro.z,
+                        sensorData.mag.x, sensorData.mag.y, sensorData.mag.z,
+                        sensorData.baro.pressure, sensorData.baro.temperature, sensorData.baro.asl);
+                } else {
+                    DEBUG_PRINTI("SENS acc[%.3f %.3f %.3f] gyro[%.3f %.3f %.3f] mag[%.3f %.3f %.3f]\n",
+                        sensorData.acc.x, sensorData.acc.y, sensorData.acc.z,
+                        sensorData.gyro.x, sensorData.gyro.y, sensorData.gyro.z,
+                        sensorData.mag.x, sensorData.mag.y, sensorData.mag.z);
+                }
+            }
+#endif
+
 #ifdef DEBUG_EP2
             if (isBarometerPresent) {
                 DEBUG_PRINT_LOCAL("ax=%f ay=%f az=%f gx=%f gy=%f gz=%f hx=%f hy=%f hz=%f pres=%f temp=%f asl=%f\n",
@@ -407,6 +434,12 @@ static void sensorsDeviceInit(void)
 
     // Wait for sensors to startup
     while (xTaskGetTickCount() < 1000);
+
+    cosPitch = cosf(PITCH_CALIB * (float)M_PI / 180.0f);
+    sinPitch = sinf(PITCH_CALIB * (float)M_PI / 180.0f);
+    cosRoll = cosf(ROLL_CALIB * (float)M_PI / 180.0f);
+    sinRoll = sinf(ROLL_CALIB * (float)M_PI / 180.0f);
+    // DEBUG_PRINTI("IMU trim pitch=%.2f roll=%.2f\n", (double)PITCH_CALIB, (double)ROLL_CALIB);
 
     i2cdevInit(I2C0_DEV);
     mpu6050Init(I2C0_DEV);
